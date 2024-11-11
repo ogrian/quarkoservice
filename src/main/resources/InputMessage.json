@@ -1,0 +1,13 @@
+{
+  "customer": {
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john.doe@example.com"
+  },
+  "options": [
+    {
+      "type": "hotel",
+      "value": "book"
+    }
+  ]
+}
