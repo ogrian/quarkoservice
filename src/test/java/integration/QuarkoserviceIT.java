@@ -6,6 +6,7 @@ import com.reksoft.quarkoservice.dto.OutputMessage;
 import io.quarkus.test.junit.QuarkusTest;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.helpers.test.AssertSubscriber;
+import io.smallrye.reactive.messaging.rabbitmq.IncomingRabbitMQMetadata;
 import io.vertx.core.json.JsonObject;
 import org.eclipse.microprofile.reactive.messaging.Channel;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import java.time.Duration;
+import java.util.Optional;
 
 @QuarkusTest
 // Аналог @DirtiesContext. При наличии одного теста эта аннотация не нужна.
@@ -27,10 +29,10 @@ public class QuarkoserviceIT {
     private static final String TEST_EMAIL = "test@test.com";
 
     private final Emitter<InputMessage> inputQueueEmitter;
-    private final Multi<JsonObject> outputExchange;
+    private final Multi<Message<JsonObject>> outputExchange;
 
     public QuarkoserviceIT(@Channel("input-queue-test") Emitter<InputMessage> inputQueueEmitter,
-                           @Channel("output-exchange-test") Multi<JsonObject> outputExchange) {
+                           @Channel("output-exchange-test") Multi<Message<JsonObject>> outputExchange) {
         this.inputQueueEmitter = inputQueueEmitter;
         this.outputExchange = outputExchange;
     }
@@ -38,7 +40,7 @@ public class QuarkoserviceIT {
     @Test
     void shouldSendOutputMessage_whenInputMessageIsConsumed() {
         // Подписку нужно сделать раньше отправки сообщения
-        AssertSubscriber<JsonObject> subscriber = outputExchange.subscribe()
+        AssertSubscriber<Message<JsonObject>> subscriber = outputExchange.subscribe()
                 .withSubscriber(AssertSubscriber.create(1));
 
         // Отправка сообщения
@@ -53,13 +55,23 @@ public class QuarkoserviceIT {
         inputQueueEmitter.send(Message.of(inputMessage));
 
         // Получение результата обработки сообщения
-        JsonObject responseObj = subscriber.awaitItems(1,
+        Message<JsonObject> responseMessage = subscriber.awaitItems(1,
                 Duration.ofSeconds(OPERATION_TIMEOUT)).getItems().get(0);
 
         // Отмена подписки: в случае наличия нескольких тестов это поможет избежать "интересных" побочных эффектов
         subscriber.cancel();
 
-        OutputMessage result = responseObj.mapTo(OutputMessage.class);
+        Assertions.assertNotNull(responseMessage);
+        Assertions.assertNotNull(responseMessage.getMetadata());
+
+        Optional<IncomingRabbitMQMetadata> metadataOptional =
+                responseMessage.getMetadata().get(IncomingRabbitMQMetadata.class);
+        Assertions.assertTrue(metadataOptional.isPresent());
+
+        String headerValue = (String) metadataOptional.get().getHeaders().get("custom-header");
+        Assertions.assertEquals("some-value", headerValue);
+
+        OutputMessage result = responseMessage.getPayload().mapTo(OutputMessage.class);
 
         Assertions.assertEquals("message: " + TEST_LAST_NAME, result.getMessage());
     }
