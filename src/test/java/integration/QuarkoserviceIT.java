@@ -13,14 +13,11 @@ import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.eclipse.microprofile.reactive.messaging.Message;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
 
 import java.time.Duration;
 import java.util.Optional;
 
 @QuarkusTest
-// Аналог @DirtiesContext. При наличии одного теста эта аннотация не нужна.
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class QuarkoserviceIT {
 
     private static final int OPERATION_TIMEOUT = 10;
@@ -39,10 +36,6 @@ public class QuarkoserviceIT {
 
     @Test
     void shouldSendOutputMessage_whenInputMessageIsConsumed() {
-        // Подписку нужно сделать раньше отправки сообщения
-        AssertSubscriber<Message<JsonObject>> subscriber = outputExchange.subscribe()
-                .withSubscriber(AssertSubscriber.create(1));
-
         // Отправка сообщения
         InputMessage inputMessage = InputMessage.builder()
                 .customer(Customer.builder()
@@ -54,15 +47,14 @@ public class QuarkoserviceIT {
 
         inputQueueEmitter.send(Message.of(inputMessage));
 
+        AssertSubscriber<Message<JsonObject>> subscriber = outputExchange.subscribe()
+                .withSubscriber(AssertSubscriber.create(1));
+
         // Получение результата обработки сообщения
         Message<JsonObject> responseMessage = subscriber.awaitItems(1,
-                Duration.ofSeconds(OPERATION_TIMEOUT)).getItems().get(0);
-
-        // Отмена подписки: в случае наличия нескольких тестов это поможет избежать "интересных" побочных эффектов
-        subscriber.cancel();
-
-        Assertions.assertNotNull(responseMessage);
-        Assertions.assertNotNull(responseMessage.getMetadata());
+                        Duration.ofSeconds(OPERATION_TIMEOUT))
+                .cancel()
+                .getLastItem();
 
         Optional<IncomingRabbitMQMetadata> metadataOptional =
                 responseMessage.getMetadata().get(IncomingRabbitMQMetadata.class);
